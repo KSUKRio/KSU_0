@@ -1,3 +1,3 @@
 import streamlit as st
 
-st.
+st.title("こんにちは、吉村ゼミ")

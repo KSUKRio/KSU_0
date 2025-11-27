@@ -8,7 +8,7 @@ st.write(name)
 st.checkbox("同意します")
 
 adress = st.selectbox("次の中から現住所を教えてください",["京都府","大阪府"])
-st.weite(adress)
+st.write(adress)
 
 st.multiselect("次から複数選択してください",["映画","音楽","散歩"])
 

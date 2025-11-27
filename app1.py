@@ -10,9 +10,11 @@ st.checkbox("同意します")
 adress = st.selectbox("次の中から現住所を教えてください",["京都府","大阪府"])
 st.write(adress)
 
-st.multiselect("次から複数選択してください",["映画","音楽","散歩"])
+hobby = st.multiselect("次から複数選択してください",["映画","音楽","散歩"])
+st.write(hobby)
 
-st.slider("この映画を10点満点で評価してください",0,10,0)
+reputation = st.slider("この映画を10点満点で評価してください",0,10,0)
+st.write(reputation)
 
 camera = st.camera_input("写真を撮影します！")
 if camera:

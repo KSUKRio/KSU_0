@@ -6,6 +6,8 @@ name = st.text_input("名前を入力")
 st.write(name)
 
 st.checkbox("同意します")
+st.selection("次の中から現住所を教えてください",["京都府","大阪府"])
+
 camera = st.camera_input("写真を撮影します！")
 if camera:
   st.image(camera, caption="写真", use_column_width=True)

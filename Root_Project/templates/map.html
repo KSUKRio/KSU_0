@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>避難経路表示マップ</title>
+  <style>
+    html, body { margin: 0; height: 100%; font-family: sans-serif; font-size: 14px; }
+    #map { height: 100vh; width: 100%; }
+
+    /* --- フキダシ --- */
+    .gm-style-iw-c { padding: 6px !important; }
+    .gm-style-iw-d { overflow: hidden !important; max-height: none !important; }
+    .gm-ui-hover-effect { top: 0px !important; right: 0px !important; opacity: 0.6; }
+    .iw-container { min-width: 150px; margin: 0; padding: 0; }
+    .iw-title { margin: 0 0 2px 0; font-size: 12px; font-weight: bold; line-height: 1.2; padding-right: 15px; }
+    .shelter-info-table { width: 100%; border-collapse: collapse; margin-top: 2px; font-size: 10px; text-align: center; }
+    .shelter-info-table th { background-color: #f2f2f2; border: 1px solid #ddd; padding: 1px 2px; font-weight: bold; white-space: nowrap; }
+    .shelter-info-table td { border: 1px solid #ddd; padding: 1px 2px; }
+
+    /* --- 災害発生ボタン --- */
+    #disasterButtonContainer { position: absolute; top: 80px; left: 20px; z-index: 1000; }
+    #disasterButton {
+        padding: 15px 25px; background-color: #dc3545; color: white; border: none; border-radius: 50px;
+        font-size: 1.2em; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        cursor: pointer; transition: transform 0.1s, background-color 0.2s;
+    }
+    #disasterButton:hover { background-color: #c82333; transform: scale(1.05); }
+    #disasterButton.active { background-color: #343a40; }
+
+    /* --- 避難所設定パネル --- */
+    #disasterSettingsPanel {
+        position: absolute; top: 150px; left: 20px; width: 280px; max-height: 60vh;
+        background: rgba(255, 255, 255, 0.95); border: 2px solid #dc3545; border-radius: 8px;
+        padding: 10px; z-index: 1000; overflow-y: auto; display: none;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    #settingsHeader {
+        margin: 0 0 5px 0; font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 5px;
+        cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+        background-color: #ffe6e6; padding: 5px; border-radius: 4px;
+    }
+    #settingsHeader:hover { background-color: #ffcccc; }
+    #settingsContent { display: none; }
+    .shelter-edit-item { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dotted #ccc; }
+    .shelter-edit-item:last-child { border-bottom: none; }
+    .shelter-edit-name { font-weight: bold; font-size: 12px; margin-bottom: 5px; }
+    .shelter-edit-inputs { display: flex; gap: 5px; flex-wrap: wrap; }
+    .shelter-edit-inputs label { font-size: 10px; width: 45%; margin: 0; }
+    .shelter-edit-inputs input { width: 100%; font-size: 11px; padding: 2px; }
+
+    /* --- スコア表示 (修正: 設定表示を削除) --- */
+    #scoreDisplay {
+        position: absolute; top: 20px; right: 20px; width: 230px;
+        background: rgba(255, 255, 255, 0.95); border: 2px solid #007bff; border-radius: 8px;
+        padding: 15px; z-index: 1000; display: none; box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    #scoreDisplay h4 { margin: 0 0 10px 0; color: #007bff; font-size: 16px; text-align: center; }
+    .score-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; }
+    .score-value { font-weight: bold; font-size: 15px; }
+    
+    /* --- その他パネル --- */
+    #buttonContainer { position: absolute; bottom: 20px; left: 0; width: 100%; display: flex; justify-content: space-around; z-index: 1000; padding: 0 10px; box-sizing: border-box; }
+    #toggleButton, #searchButton, #postButton, #settingsButton { padding: 12px 18px; border: none; border-radius: 8px; font-size: 1.1em; cursor: pointer; flex-grow: 1; margin: 0 5px; }
+    #toggleButton { background: white; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+    #toggleButton.active { background: #2196F3; color: white; }
+    #settingsButton { background: #007bff; color: white; }
+    #postButton { background: #dc3545; color: white; }
+    #searchButton { background: #28a745; color: white; }
+
+    #settingsPanel, #postPanel, #searchPanel { position: absolute; background: white; border: 1px solid #ccc; border-radius: 10px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2); display: none; overflow-y: auto; }
+    #settingsPanel { top: 0; bottom: 90px; right: 0; width: 300px; transform: translateX(100%); transition: transform 0.3s; padding: 1.5em; display: flex; flex-direction: column; }
+    #settingsPanel.open { transform: translateX(0); }
+    #postPanel { bottom: 90px; right: 10px; width: 300px; padding: 15px; }
+    #searchPanel { top: 0; bottom: 90px; left: 0; width: 300px; transform: translateX(-100%); transition: transform 0.3s; padding: 1.5em; display: flex; flex-direction: column; }
+    #searchPanel.open { transform: translateX(0); }
+    
+    #routeModeMenu { position: absolute; bottom: 90px; left: 10px; background: white; border: 1px solid #ccc; border-radius: 8px; padding: 10px; display: none; flex-direction: column; gap: 5px; z-index: 1001; }
+    #distanceDisplay { position: absolute; top: 80px; right: 10px; width: 250px; background: rgba(255,255,255,0.9); border: 1px solid #ccc; border-radius: 8px; padding: 10px; z-index: 999; display: none; max-height: 80%; overflow-y: auto; }
+    
+    label { display: block; margin-top: 10px; font-weight: bold; }
+    input, select, textarea, button { font-size: 1em; width: 100%; box-sizing: border-box; padding: 5px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="disasterButtonContainer">
+    <button id="disasterButton">⚠️ 災害発生</button>
+  </div>
+
+  <div id="disasterSettingsPanel">
+    <h4 id="settingsHeader">
+        <span>▼ 避難所パラメータ設定</span>
+        <span style="font-size:10px;">(クリックで開閉)</span>
+    </h4>
+    <div id="settingsContent">
+        <div id="shelterInputsContainer"></div>
+        <button id="updateSheltersButton" style="background: #dc3545; color: white; margin-top: 10px; font-weight: bold;">再計算して更新</button>
+    </div>
+  </div>
+
+  <div id="scoreDisplay">
+    <h4>推薦結果</h4>
+    <div class="score-row">
+        <span>最適避難所:</span>
+        <span id="scoreName" class="score-value" style="font-size:14px;">-</span>
+    </div>
+    <div class="score-row">
+        <span>直線距離:</span>
+        <span id="scoreDist" class="score-value">-</span>
+    </div>
+    <div class="score-row" style="margin-top:10px;">
+        <span>推薦スコア:</span>
+        <span id="scoreValue" class="score-value" style="font-size:20px; color:#dc3545;">-</span>
+    </div>
+    <div id="scoreHelp" style="font-size:10px; color:#007bff; margin-top:5px; cursor:pointer; text-decoration:underline; text-align:right;">
+        推薦スコアについて
+    </div>
+  </div>
+
+  <div id="distanceDisplay">
+    <h3>避難所までの距離</h3>
+    <ul id="shelterDistances"></ul>
+  </div>
+
+  <div id="settingsPanel">
+    <h3>設定</h3>
+    <label>大人の人数: <input type="number" min="0" id="adultCount" /></label>
+    <label>子供の人数: <input type="number" min="0" id="childCount" /></label>
+    <label>必要な物資 (優先度):</label>
+    <div style="background: #f9f9f9; padding: 10px; border: 1px solid #eee;">
+        <label style="margin-top: 5px;">物資A: 
+            <select id="supplyA">
+                <option value="中" selected>-- 選択(中) --</option>
+                <option value="最高">最高</option>
+                <option value="高">高</option>
+                <option value="中">中</option>
+                <option value="低">低</option>
+                <option value="最低">最低</option>
+            </select>
+        </label>
+        <label style="margin-top: 5px;">物資B: 
+            <select id="supplyB">
+                <option value="中" selected>-- 選択(中) --</option>
+                <option value="最高">最高</option>
+                <option value="高">高</option>
+                <option value="中">中</option>
+                <option value="低">低</option>
+                <option value="最低">最低</option>
+            </select>
+        </label>
+        <label style="margin-top: 5px;">物資C: 
+            <select id="supplyC">
+                <option value="中" selected>-- 選択(中) --</option>
+                <option value="最高">最高</option>
+                <option value="高">高</option>
+                <option value="中">中</option>
+                <option value="低">低</option>
+                <option value="最低">最低</option>
+            </select>
+        </label>
+    </div>
+    <label>フォントサイズ: <select id="fontSizeSelector"><option value="12px">小</option><option value="14px" selected>普通</option><option value="16px">大</option></select></label>
+    <button id="saveButton" style="margin-top: 15px; background: #28a745; color: white;">保存</button>
+  </div>
+
+  <div id="postPanel">
+    <h3>投稿フォーム</h3>
+    <textarea id="postContent" rows="5" placeholder="内容を入力"></textarea>
+    <button id="submitPostButton" style="margin-top: 10px; background: #17a2b8; color: white;">投稿する</button>
+    <button id="cancelPostButton" style="margin-top: 5px; background: #6c757d; color: white;">キャンセル</button>
+  </div>
+  <div id="searchPanel">
+    <h3>地点検索</h3>
+    <div style="display:flex; gap:5px;"><input type="text" id="locationSearchInput" placeholder="地域名" /><button id="executeSearchButton" style="width: auto;">検索</button></div>
+    <ul id="weatherDisasterInfoList" style="margin-top:15px;"></ul>
+  </div>
+  <div id="routeModeMenu">
+    <button id="routeFromCurrentLocation">現在地から</button>
+    <button id="routeFromArbitraryLocation">任意地点から</button>
+  </div>
+
+  <div id="buttonContainer">
+    <button id="toggleButton">経路表示</button>
+    <button id="searchButton">地点検索</button>
+    <button id="postButton">投稿</button>
+    <button id="settingsButton">設定</button>
+  </div>
+
+  <script>
+    let map;
+    let userLocation = null;
+    let directionsRenderers = [];
+    let disasterDirectionsRenderer = null;
+    let disasterMarkers = [];
+    let disasterInfoWindows = [];
+    let isDisasterMode = false;
+    let currentDisasterShelters = [];
+
+    // 既存変数
+    let routeVisible = false;
+    let isPostingMode = false;
+    let currentClickMarker = null;
+    let currentClickLocation = null;
+    let mapClickListener = null;
+    let arbitraryRouteOriginMarker = null;
+    let mapArbitraryClickListener = null;
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 35.0116, lng: 135.7681 }, zoom: 13, mapId: "e0730594e600c011b58d79a8",
+      });
+      disasterDirectionsRenderer = new google.maps.DirectionsRenderer({
+          map: map, suppressMarkers: true, polylineOptions: { strokeColor: "red", strokeWeight: 5 }
+      });
+      disasterDirectionsRenderer.setMap(null);
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            userLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
+            map.setCenter(userLocation);
+            new google.maps.marker.AdvancedMarkerElement({
+              position: userLocation, map: map, title: "現在地",
+              content: new google.maps.marker.PinElement({background: "#4CAF50", borderColor: "#388E3C", glyphColor: "#FFF"}).element
+            });
+          },
+          () => alert("現在地が取得できませんでした。")
+        );
+      }
+    }
+
+    // --- 折りたたみ機能 ---
+    const settingsHeader = document.getElementById('settingsHeader');
+    const settingsContent = document.getElementById('settingsContent');
+    settingsHeader.onclick = () => {
+        if (settingsContent.style.display === 'block') {
+            settingsContent.style.display = 'none';
+            settingsHeader.querySelector('span:first-child').textContent = "▼ 避難所パラメータ設定";
+        } else {
+            settingsContent.style.display = 'block';
+            settingsHeader.querySelector('span:first-child').textContent = "▲ 避難所パラメータ設定";
+        }
+    };
+
+    // --- 推薦スコアの説明表示 (詳細な式を記載) ---
+    document.getElementById('scoreHelp').onclick = () => {
+        alert("【推薦スコア(Score)の計算式】\n\n" +
+              "1. 混雑スコア (C) [0-100点]\n" +
+              "   ■ 5人以下 (少人数)\n" +
+              "     C = 混雑率\n" +
+              "     (人が多いほど高スコア：人流分散のため)\n\n" +
+              "   ■ 6人以上 (大人数)\n" +
+              "     C = 100 - 混雑率\n" +
+              "     (空いているほど高スコア：場所確保のため)\n\n" +
+              "2. 物資スコア (S) [0-100点]\n" +
+              "   S = (獲得した重要度 / 全重要度) × 100\n" +
+              "   ※重要度: 最高(10), 高(6), 中(3), 低(1)\n\n" +
+              "3. 総合スコア (Total)\n" +
+              "   ■ 5人以下: (C×5 + S×5) ÷ 10\n" +
+              "   ■ 6人以上: (C×7 + S×3) ÷ 10");
+    };
+
+    // --- 災害発生ボタン処理 ---
+    const disasterButton = document.getElementById('disasterButton');
+    const settingsPanelDiv = document.getElementById('disasterSettingsPanel');
+    const scoreDisplayDiv = document.getElementById('scoreDisplay');
+    const inputsContainer = document.getElementById('shelterInputsContainer');
+
+    disasterButton.addEventListener('click', () => {
+        if (!userLocation) return alert("現在地を取得できていません。");
+
+        if (!isDisasterMode) {
+            if (routeVisible) { clearRoutes(); document.getElementById('routeModeMenu').style.display = 'none'; }
+            
+            isDisasterMode = true;
+            disasterButton.textContent = "通常モードへ戻る";
+            disasterButton.classList.add('active');
+            settingsPanelDiv.style.display = 'block'; 
+            scoreDisplayDiv.style.display = 'block';  
+
+            fetchDisasterData("/get_disaster_shelters");
+
+        } else {
+            resetDisasterMode();
+        }
+    });
+
+    function fetchDisasterData(endpoint, extraData = {}) {
+        const payload = {
+            lat: userLocation.lat,
+            lng: userLocation.lng,
+            supply_a: localStorage.getItem('supplyA') || "中",
+            supply_b: localStorage.getItem('supplyB') || "中",
+            supply_c: localStorage.getItem('supplyC') || "中",
+            adult_count: localStorage.getItem('adultCount') || 1,
+            child_count: localStorage.getItem('childCount') || 0,
+            ...extraData
+        };
+
+        fetch(endpoint, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) return alert("エラー: " + data.error);
+            if (data.length === 0) return alert("避難所が見つかりません");
+
+            currentDisasterShelters = data; 
+            renderSheltersOnMap(data);      
+            renderSettingsPanel(data);      
+            updateScoreDisplay(data[0]);    
+        })
+        .catch(err => { console.error(err); alert("通信エラー"); resetDisasterMode(); });
+    }
+
+    function renderSheltersOnMap(shelters) {
+        disasterMarkers.forEach(m => m.map = null);
+        disasterMarkers = [];
+        disasterInfoWindows.forEach(w => w.close());
+        disasterInfoWindows = [];
+
+        shelters.forEach(shelter => {
+            const pin = new google.maps.marker.PinElement({ background: "#FF5722", borderColor: "#E64A19", glyphColor: "#FFF", scale: 1.0 });
+            const marker = new google.maps.marker.AdvancedMarkerElement({
+                position: { lat: shelter.lat, lng: shelter.lng }, map: map, title: shelter.name, content: pin.element
+            });
+
+            const contentString = `
+                <div class="iw-container">
+                    <h3 class="iw-title">${shelter.name}</h3>
+                    <table class="shelter-info-table">
+                        <tr><th>混雑</th><th>物A</th><th>物B</th><th>物C</th></tr>
+                        <tr>
+                            <td style="color:${getColor(shelter.data.congestion)}; font-weight:bold;">${shelter.data.congestion}</td>
+                            <td>${shelter.data.supply_a}</td>
+                            <td>${shelter.data.supply_b}</td>
+                            <td>${shelter.data.supply_c}</td>
+                        </tr>
+                    </table>
+                </div>`;
+            const infoWindow = new google.maps.InfoWindow({ content: contentString, disableAutoPan: true });
+            infoWindow.open(map, marker);
+            disasterMarkers.push(marker);
+            disasterInfoWindows.push(infoWindow);
+        });
+
+        drawDisasterRoute(shelters[0]); 
+    }
+
+    function renderSettingsPanel(shelters) {
+        inputsContainer.innerHTML = '';
+        shelters.forEach((s, index) => {
+            const div = document.createElement('div');
+            div.className = 'shelter-edit-item';
+            div.innerHTML = `
+                <div class="shelter-edit-name">${index + 1}. ${s.name}</div>
+                <div class="shelter-edit-inputs">
+                    <label>混雑: <input type="number" min="0" max="100" class="input-congestion" data-idx="${index}" value="${s.data.congestion}"></label>
+                    <label>物A: <input type="number" min="0" max="100" class="input-supply-a" data-idx="${index}" value="${s.data.supply_a}"></label>
+                    <label>物B: <input type="number" min="0" max="100" class="input-supply-b" data-idx="${index}" value="${s.data.supply_b}"></label>
+                    <label>物C: <input type="number" min="0" max="100" class="input-supply-c" data-idx="${index}" value="${s.data.supply_c}"></label>
+                </div>
+            `;
+            inputsContainer.appendChild(div);
+        });
+    }
+
+    document.getElementById('updateSheltersButton').onclick = () => {
+        const congestionInputs = document.querySelectorAll('.input-congestion');
+        const supplyAInputs = document.querySelectorAll('.input-supply-a');
+        const supplyBInputs = document.querySelectorAll('.input-supply-b');
+        const supplyCInputs = document.querySelectorAll('.input-supply-c');
+
+        for(let i=0; i < currentDisasterShelters.length; i++) {
+            currentDisasterShelters[i].data.congestion = parseInt(congestionInputs[i].value) || 0;
+            currentDisasterShelters[i].data.supply_a = parseInt(supplyAInputs[i].value) || 0;
+            currentDisasterShelters[i].data.supply_b = parseInt(supplyBInputs[i].value) || 0;
+            currentDisasterShelters[i].data.supply_c = parseInt(supplyCInputs[i].value) || 0;
+        }
+        fetchDisasterData("/recalculate_shelters", { shelter_list: currentDisasterShelters });
+    };
+
+    function updateScoreDisplay(bestShelter) {
+        document.getElementById('scoreName').textContent = bestShelter.name;
+        // 距離
+        let distDisplay = Math.round(bestShelter.distance) + " m";
+        if(bestShelter.distance >= 1000) {
+            distDisplay = (bestShelter.distance / 1000).toFixed(2) + " km";
+        }
+        document.getElementById('scoreDist').textContent = distDisplay;
+        
+        // スコア
+        document.getElementById('scoreValue').textContent = Math.round(bestShelter.match_score) + "%";
+    }
+
+    function resetDisasterMode() {
+        isDisasterMode = false;
+        disasterButton.textContent = "⚠️ 災害発生";
+        disasterButton.classList.remove('active');
+        settingsPanelDiv.style.display = 'none';
+        scoreDisplayDiv.style.display = 'none';
+        disasterMarkers.forEach(m => m.map = null);
+        disasterInfoWindows.forEach(w => w.close());
+        disasterMarkers = [];
+        disasterInfoWindows = [];
+        if(disasterDirectionsRenderer) disasterDirectionsRenderer.setMap(null);
+    }
+
+    function drawDisasterRoute(shelter) {
+        if(!disasterDirectionsRenderer) return;
+        disasterDirectionsRenderer.setMap(map);
+        new google.maps.DirectionsService().route({
+            origin: userLocation, 
+            destination: { lat: shelter.lat, lng: shelter.lng }, 
+            travelMode: google.maps.TravelMode.WALKING,
+            provideRouteAlternatives: false
+        }, (res, status) => {
+            if (status === "OK") disasterDirectionsRenderer.setDirections(res);
+        });
+    }
+
+    function getColor(value) {
+        if (value > 80) return "red";
+        if (value > 50) return "orange";
+        return "green";
+    }
+
+    // --- その他UI操作 ---
+    const settingsButton = document.getElementById('settingsButton');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const postButton = document.getElementById('postButton');
+    const postPanel = document.getElementById('postPanel');
+    const searchButton = document.getElementById('searchButton');
+    const searchPanel = document.getElementById('searchPanel');
+    const routeModeMenu = document.getElementById('routeModeMenu');
+    const toggleButton = document.getElementById('toggleButton');
+
+    function closeAllPanels() {
+        settingsPanel.classList.remove('open');
+        postPanel.style.display = 'none';
+        searchPanel.classList.remove('open');
+        routeModeMenu.style.display = 'none';
+    }
+
+    settingsButton.onclick = () => { let open = settingsPanel.classList.contains('open'); closeAllPanels(); if(!open) settingsPanel.classList.add('open'); };
+    searchButton.onclick = () => { let open = searchPanel.classList.contains('open'); closeAllPanels(); if(!open) searchPanel.classList.add('open'); };
+    postButton.onclick = () => { togglePostingMode(); closeAllPanels(); };
+    toggleButton.onclick = () => { 
+        if(routeVisible) { clearRoutes(); routeModeMenu.style.display = 'none'; }
+        else { routeModeMenu.style.display = routeModeMenu.style.display === 'flex' ? 'none' : 'flex'; }
+    };
+
+    function clearRoutes() {
+        directionsRenderers.forEach(r => r.setMap(null)); directionsRenderers = [];
+        document.getElementById('distanceDisplay').style.display = 'none';
+        routeVisible = false;
+        toggleButton.textContent = "経路表示";
+        toggleButton.classList.remove("active");
+        if(arbitraryRouteOriginMarker) { arbitraryRouteOriginMarker.map=null; arbitraryRouteOriginMarker=null; }
+    }
+
+    function startRouteDisplay(origin) {
+        clearRoutes();
+        fetch("/get_nearest_shelters", {
+            method: "POST", headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({lat: origin.lat, lng: origin.lng})
+        }).then(r=>r.json()).then(data => {
+            if(data.error) return alert(data.error);
+            routeVisible = true; toggleButton.textContent="経路表示OFF"; toggleButton.classList.add("active");
+            document.getElementById('distanceDisplay').style.display='block';
+            const list = document.getElementById('shelterDistances'); list.innerHTML='';
+            data.forEach(s => {
+                const dr = new google.maps.DirectionsRenderer({map:map});
+                directionsRenderers.push(dr);
+                new google.maps.DirectionsService().route({ origin: origin, destination: {lat:s.lat, lng:s.lng}, travelMode: google.maps.TravelMode.WALKING },
+                (res, status) => {
+                    if(status==="OK") { dr.setDirections(res);
+                        const li = document.createElement('li'); li.textContent = `${s.name}: ${res.routes[0].legs[0].distance.text}`; list.appendChild(li);
+                    }
+                });
+            });
+        });
+    }
+
+    document.getElementById('routeFromCurrentLocation').onclick = () => { closeAllPanels(); startRouteDisplay(userLocation); };
+    document.getElementById('routeFromArbitraryLocation').onclick = () => {
+        closeAllPanels(); clearRoutes(); alert("地図をクリック");
+        toggleButton.textContent = "地点選択中..."; toggleButton.classList.add("active");
+        mapArbitraryClickListener = map.addListener('click', (e) => {
+            if(arbitraryRouteOriginMarker) arbitraryRouteOriginMarker.map=null;
+            const loc = e.latLng.toJSON();
+            arbitraryRouteOriginMarker = new google.maps.marker.AdvancedMarkerElement({
+                position:loc, map:map, content:new google.maps.marker.PinElement({background:"blue"}).element
+            });
+            startRouteDisplay(loc);
+            google.maps.event.removeListener(mapArbitraryClickListener);
+        });
+    };
+
+    function togglePostingMode(force) {
+        if(force===false || (force===undefined && isPostingMode)) {
+            isPostingMode=false; postButton.classList.remove("active"); postButton.textContent="投稿";
+            postPanel.style.display='none';
+            if(mapClickListener) google.maps.event.removeListener(mapClickListener);
+            if(currentClickMarker) currentClickMarker.map=null;
+        } else {
+            isPostingMode=true; postButton.classList.add("active"); postButton.textContent="投稿モードON";
+            alert("投稿場所をクリック");
+            mapClickListener = map.addListener('click', (e) => {
+                if(currentClickMarker) currentClickMarker.map=null;
+                currentClickLocation = e.latLng.toJSON();
+                currentClickMarker = new google.maps.marker.AdvancedMarkerElement({
+                    position: currentClickLocation, map:map, content: new google.maps.marker.PinElement({background:"#dc3545"}).element
+                });
+                postPanel.style.display='block';
+            });
+        }
+    }
+    document.getElementById('submitPostButton').onclick = () => {
+        const txt = document.getElementById('postContent').value;
+        if(txt && currentClickLocation) {
+             const m = new google.maps.marker.AdvancedMarkerElement({
+                position:currentClickLocation, map:map, content:new google.maps.marker.PinElement({glyph:"📝", background:"#ffc107", borderColor:"black"}).element
+            });
+            const iw = new google.maps.InfoWindow({content: `<div>${txt}<br><button onclick="this.parentElement.parentElement.remove()">削除</button></div>`});
+            m.addListener('click', ()=>iw.open(map,m));
+            document.getElementById('postContent').value=''; togglePostingMode(false);
+        }
+    };
+    document.getElementById('cancelPostButton').onclick = () => togglePostingMode(false);
+
+    document.getElementById('saveButton').onclick = () => {
+        localStorage.setItem('adultCount', document.getElementById('adultCount').value);
+        localStorage.setItem('childCount', document.getElementById('childCount').value);
+        localStorage.setItem('supplyA', document.getElementById('supplyA').value);
+        localStorage.setItem('supplyB', document.getElementById('supplyB').value);
+        localStorage.setItem('supplyC', document.getElementById('supplyC').value);
+        localStorage.setItem('fontSize', document.getElementById('fontSizeSelector').value);
+        alert("保存しました");
+        
+        if (isDisasterMode && currentDisasterShelters.length > 0) {
+            fetchDisasterData("/recalculate_shelters", { shelter_list: currentDisasterShelters });
+        }
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('adultCount').value = localStorage.getItem('adultCount')||'';
+        document.getElementById('childCount').value = localStorage.getItem('childCount')||'';
+        document.getElementById('supplyA').value = localStorage.getItem('supplyA')||'中';
+        document.getElementById('supplyB').value = localStorage.getItem('supplyB')||'中';
+        document.getElementById('supplyC').value = localStorage.getItem('supplyC')||'中';
+        const fs = localStorage.getItem('fontSize')||'14px';
+        document.getElementById('fontSizeSelector').value = fs; document.body.style.fontSize=fs;
+    });
+  </script>
+  <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDqtL6iVR7EmZ1GFpov_n_RM77Hkcd-Ubo&callback=initMap&libraries=marker"></script>
+</body>
+</html>
